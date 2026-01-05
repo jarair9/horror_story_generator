@@ -1,6 +1,7 @@
 import aiohttp
 import asyncio
 from pathlib import Path
+import os
 from ..utils.config import Config
 from ..utils.logger import logger
 
@@ -74,6 +75,17 @@ class ImageGenerator:
                                 except Exception:
                                     pass
                                 logger.warning(f"Attempt {attempt+1}/{retry_count} failed for {current_url}. Status: {response.status}, Content-Type: {content_type}. Preview: {text_preview}")
+
+                                # Create an immediate black placeholder so caller has feedback
+                                try:
+                                    from PIL import Image
+                                    img = Image.new('RGB', (self.width, self.height), color='black')
+                                    img.save(output_file)
+                                    logger.info(f"Wrote fallback black image due to non-image response: {output_file}")
+                                    return str(output_file)
+                                except Exception as e_img:
+                                    logger.error(f"Failed to write fallback image: {e_img}")
+
                                 # If server error, bump model index to try alternative models faster
                                 if response.status in [500, 502, 503, 504]:
                                     current_model_idx += 1
@@ -91,10 +103,14 @@ class ImageGenerator:
                 if attempt >= 1: # After second fail, switch model
                     current_model_idx += 1
                 
-        logger.error(f"All attempts failed for scene {index}. Generating fallback black image.")
-        
-        # Fallback: Create a black placeholder
-        from PIL import Image
-        img = Image.new('RGB', (self.width, self.height), color='black')
-        img.save(output_file)
+        # If, for any reason, the output file was not created or is empty, create a black placeholder
+        try:
+            if not output_file.exists() or output_file.stat().st_size == 0:
+                logger.error(f"All attempts failed for scene {index} or no valid image received. Generating fallback black image.")
+                from PIL import Image
+                img = Image.new('RGB', (self.width, self.height), color='black')
+                img.save(output_file)
+        except Exception as e:
+            logger.error(f"Error while creating fallback image: {e}")
+
         return str(output_file)

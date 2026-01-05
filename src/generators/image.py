@@ -46,40 +46,40 @@ class ImageGenerator:
         for attempt in range(retry_count):
             try:
                 # Select model for this attempt
-                # If we have failures, we might want to rotate efficiency vs quality? 
-                # For now let's try Flux first few times, then simple.
-                
                 model = models[min(current_model_idx, len(models)-1)]
-                # iterate over hosts (try preferred host first)
+
+                # Iterate over hosts (try preferred host first)
                 for host in hosts:
                     current_url = host + base_path
                     if model:
                         current_url += f"&model={model}"
-                
-                # Add default timeout of 60 seconds
-                timeout = aiohttp.ClientTimeout(total=60)
-                        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                            async with session.get(current_url) as response:
-                                # Accept only image responses; some endpoints return an HTML page saying the service moved or rate-limited
-                                content_type = response.headers.get("Content-Type", "")
-                                if response.status == 200 and content_type.startswith("image/"):
-                                    image_data = await response.read()
-                                    with open(output_file, "wb") as f:
-                                        f.write(image_data)
-                                    logger.info(f"Image saved: {output_file} (Host: {host}, Model: {model})")
-                                    return str(output_file)
-                                else:
-                                    # Log details for debugging (status or non-image content)
-                                    text_preview = ""
-                                    try:
-                                        text_preview = (await response.text())[:200]
-                                    except Exception:
-                                        pass
-                                    logger.warning(f"Attempt {attempt+1}/{retry_count} failed for {current_url}. Status: {response.status}, Content-Type: {content_type}. Preview: {text_preview}")
-                                    # If server error, bump model index to try alternative models faster
-                                    if response.status in [500, 502, 503, 504]:
-                                        current_model_idx += 1
-                                
+
+                    # Add default timeout of 60 seconds and open a session per host
+                    timeout = aiohttp.ClientTimeout(total=60)
+                    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                        async with session.get(current_url) as response:
+                            # Accept only image responses; some endpoints return an HTML page saying the service moved or rate-limited
+                            content_type = response.headers.get("Content-Type", "")
+                            if response.status == 200 and content_type.startswith("image/"):
+                                image_data = await response.read()
+                                with open(output_file, "wb") as f:
+                                    f.write(image_data)
+                                logger.info(f"Image saved: {output_file} (Host: {host}, Model: {model})")
+                                return str(output_file)
+                            else:
+                                # Log details for debugging (status or non-image content)
+                                text_preview = ""
+                                try:
+                                    text_preview = (await response.text())[:200]
+                                except Exception:
+                                    pass
+                                logger.warning(f"Attempt {attempt+1}/{retry_count} failed for {current_url}. Status: {response.status}, Content-Type: {content_type}. Preview: {text_preview}")
+                                # If server error, bump model index to try alternative models faster
+                                if response.status in [500, 502, 503, 504]:
+                                    current_model_idx += 1
+
+                    # try next host if this one didn't return an image
+
             except Exception as e:
                 logger.warning(f"Attempt {attempt+1}/{retry_count} failed with error: {e}")
                 

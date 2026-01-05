@@ -23,8 +23,14 @@ class ImageGenerator:
         
         safe_prompt = prompt.replace(" ", "%20")
         
-        # Base URL without model parameter
-        base_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width={self.width}&height={self.height}&nologo=true&seed={index}"
+        # Try a list of known hosts (some deployments have moved)
+        hosts = [
+            "https://image.pollinations.ai",
+            "https://enter.pollinations.ai",
+        ]
+
+        # Base path used to build full request URL
+        base_path = f"/prompt/{safe_prompt}?width={self.width}&height={self.height}&nologo=true&seed={index}"
         
         logger.info(f"Generating image for scene {index}...")
         
@@ -44,25 +50,35 @@ class ImageGenerator:
                 # For now let's try Flux first few times, then simple.
                 
                 model = models[min(current_model_idx, len(models)-1)]
-                current_url = base_url
-                if model:
-                    current_url += f"&model={model}"
+                # iterate over hosts (try preferred host first)
+                for host in hosts:
+                    current_url = host + base_path
+                    if model:
+                        current_url += f"&model={model}"
                 
                 # Add default timeout of 60 seconds
                 timeout = aiohttp.ClientTimeout(total=60)
-                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                    async with session.get(current_url) as response:
-                        if response.status == 200:
-                            image_data = await response.read()
-                            with open(output_file, "wb") as f:
-                                f.write(image_data)
-                            logger.info(f"Image saved: {output_file} (Model: {model})")
-                            return str(output_file)
-                        else:
-                            logger.warning(f"Attempt {attempt+1}/{retry_count} failed. Status: {response.status} (Model: {model})")
-                            # If 502/server error, maybe switch model faster?
-                            if response.status in [500, 502, 503, 504]:
-                                current_model_idx += 1
+                        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                            async with session.get(current_url) as response:
+                                # Accept only image responses; some endpoints return an HTML page saying the service moved or rate-limited
+                                content_type = response.headers.get("Content-Type", "")
+                                if response.status == 200 and content_type.startswith("image/"):
+                                    image_data = await response.read()
+                                    with open(output_file, "wb") as f:
+                                        f.write(image_data)
+                                    logger.info(f"Image saved: {output_file} (Host: {host}, Model: {model})")
+                                    return str(output_file)
+                                else:
+                                    # Log details for debugging (status or non-image content)
+                                    text_preview = ""
+                                    try:
+                                        text_preview = (await response.text())[:200]
+                                    except Exception:
+                                        pass
+                                    logger.warning(f"Attempt {attempt+1}/{retry_count} failed for {current_url}. Status: {response.status}, Content-Type: {content_type}. Preview: {text_preview}")
+                                    # If server error, bump model index to try alternative models faster
+                                    if response.status in [500, 502, 503, 504]:
+                                        current_model_idx += 1
                                 
             except Exception as e:
                 logger.warning(f"Attempt {attempt+1}/{retry_count} failed with error: {e}")

@@ -63,10 +63,12 @@ class TextEngine:
             max_line_width = max(line_widths) if line_widths else 0
             img_width = max(max_width, max_line_width + 40)
             
-            # Create transparent image
+            # Create transparent image with a semi-transparent background box for readability
             img = Image.new('RGBA', (img_width, total_height), (0, 0, 0, 0))
             draw = ImageDraw.Draw(img)
-            
+
+            # No background rectangle: keep caption background transparent for clear overlay
+
             # Draw text
             y_offset = 20
             shadow_offset = 6
@@ -106,6 +108,7 @@ class TextEngine:
         pil_img = self._create_pil_text_image(text, max_width=Config.VIDEO_WIDTH - 150)
         
         if pil_img:
+            # Position captions near the center for better focus on-screen
             return ImageClip(np.array(pil_img)).set_duration(duration).set_position(('center', 'center'), relative=True).crossfadein(0.1)
         
         return None

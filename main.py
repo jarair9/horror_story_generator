@@ -72,17 +72,29 @@ async def main():
             end_time_sec = 3.0
             
             if current_cue_idx < total_cues:
-                start_time_sec = vtt_to_sec(all_cues[current_cue_idx].start)
                 accumulated_text = ""
                 scene_text_norm = normalize(scene_text)
-                
+
+                # Use the start time of the first cue we consume, and keep accumulating
+                # cues until the normalized scene text is found within the accumulated text.
                 while current_cue_idx < total_cues:
-                    cue_text = all_cues[current_cue_idx].text
-                    accumulated_text += cue_text
-                    if normalize(accumulated_text).startswith(scene_text_norm) or len(normalize(accumulated_text)) >= len(scene_text_norm):
-                         end_time_sec = vtt_to_sec(all_cues[current_cue_idx].end)
-                         current_cue_idx += 1
-                         break
+                    cue = all_cues[current_cue_idx]
+                    cue_text = cue.text
+
+                    # set start at the first consumed cue
+                    if accumulated_text == "":
+                        start_time_sec = vtt_to_sec(cue.start)
+
+                    # add a space to keep words separated when concatenating cues
+                    accumulated_text = (accumulated_text + " " + cue_text).strip()
+                    accum_norm = normalize(accumulated_text)
+
+                    # If the scene text appears anywhere in the accumulated cues, we consider it matched.
+                    if scene_text_norm in accum_norm or len(accum_norm) >= len(scene_text_norm):
+                        end_time_sec = vtt_to_sec(cue.end)
+                        current_cue_idx += 1
+                        break
+
                     current_cue_idx += 1
                 
                 # Check bounds
